@@ -25,9 +25,12 @@ class Settings(BaseSettings):
     )
     reasoning_effort: str = Field(default="medium", alias="CODEX_REASONING_EFFORT")
     local_only: bool = Field(default=False, alias="CODEX_LOCAL_ONLY")
-    timeout_seconds: int = Field(default=120, alias="CODEX_TIMEOUT")
+    timeout_seconds: int = Field(default=300, alias="CODEX_TIMEOUT")
+    codex_queue_timeout_seconds: int = Field(
+        default=30, alias="CODEX_QUEUE_TIMEOUT_SECONDS"
+    )
     max_parallel_requests: int = Field(
-        default=2, alias="CODEX_MAX_PARALLEL_REQUESTS"
+        default=10, alias="CODEX_MAX_PARALLEL_REQUESTS"
     )
     rate_limit_per_minute: int = Field(default=60, alias="RATE_LIMIT_PER_MINUTE")
     hide_reasoning: bool = Field(default=False, alias="CODEX_HIDE_REASONING")

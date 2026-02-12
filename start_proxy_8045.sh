@@ -14,6 +14,8 @@ fi
 export CODEX_WORKDIR="${CODEX_WORKDIR:-/tmp}"
 export CODEX_SANDBOX_MODE="${CODEX_SANDBOX_MODE:-read-only}"
 export CODEX_LOCAL_ONLY="${CODEX_LOCAL_ONLY:-false}"
+export CODEX_MAX_PARALLEL_REQUESTS="${CODEX_MAX_PARALLEL_REQUESTS:-10}"
+export CODEX_QUEUE_TIMEOUT_SECONDS="${CODEX_QUEUE_TIMEOUT_SECONDS:-15}"
 
 # Auth is disabled by default.
 # Set ENABLE_PROXY_AUTH=true and PROXY_API_KEY=<token> to enforce bearer auth.

@@ -63,6 +63,8 @@ def test_run_codex_last_message_runs_in_parallel(monkeypatch, tmp_path):
 
             while len(release_events) < 2:
                 await asyncio.sleep(0)
+            while max_active < 2:
+                await asyncio.sleep(0)
 
             # Both tasks should hold a slot concurrently when the limit is 2.
             assert max_active == 2

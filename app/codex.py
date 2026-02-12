@@ -54,12 +54,27 @@ _WORKDIR_NEEDS_SKIP_GIT_CHECK = False
 class _CodexConcurrencyLimiter:
     """Limit how many Codex subprocesses run in parallel."""
 
-    def __init__(self, max_parallel: int) -> None:
-        self.configure(max_parallel)
+    def __init__(
+        self,
+        max_parallel: int,
+        queue_timeout_seconds: Optional[float] = None,
+    ) -> None:
+        self.configure(max_parallel, queue_timeout_seconds)
 
-    def configure(self, max_parallel: int) -> None:
+    def configure(
+        self,
+        max_parallel: int,
+        queue_timeout_seconds: Optional[float] = None,
+    ) -> None:
         value = max(1, int(max_parallel or 1))
         self._max_parallel = value
+        if queue_timeout_seconds is None:
+            queue_timeout_seconds = getattr(
+                self,
+                "_queue_timeout_seconds",
+                float(settings.codex_queue_timeout_seconds),
+            )
+        self._queue_timeout_seconds = max(0.0, float(queue_timeout_seconds))
         self._semaphore = asyncio.Semaphore(value)
 
     @property
@@ -68,14 +83,32 @@ class _CodexConcurrencyLimiter:
 
     @asynccontextmanager
     async def slot(self) -> AsyncIterator[None]:
-        await self._semaphore.acquire()
+        acquired = False
+        try:
+            if self._queue_timeout_seconds > 0:
+                await asyncio.wait_for(
+                    self._semaphore.acquire(),
+                    timeout=self._queue_timeout_seconds,
+                )
+            else:
+                await self._semaphore.acquire()
+            acquired = True
+        except asyncio.TimeoutError as exc:
+            raise CodexError(
+                "Codex worker pool is busy; timed out waiting for an available slot",
+                status_code=503,
+            ) from exc
         try:
             yield
         finally:
-            self._semaphore.release()
+            if acquired:
+                self._semaphore.release()
 
 
-_parallel_limiter = _CodexConcurrencyLimiter(settings.max_parallel_requests)
+_parallel_limiter = _CodexConcurrencyLimiter(
+    settings.max_parallel_requests,
+    settings.codex_queue_timeout_seconds,
+)
 
 
 @dataclass(frozen=True)
@@ -1012,16 +1045,26 @@ async def run_codex_last_message(
     with tempfile.NamedTemporaryFile(prefix="codex-last-", suffix=".txt", dir=settings.codex_workdir, delete=False) as tf:
         out_path = tf.name
     cmd = cmd + ["--json", "--output-last-message", out_path]
+    proc = None
     try:
         async with _parallel_limiter.slot():
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=settings.codex_workdir,
-                env=codex_env,
-                limit=_ASYNCIO_STREAM_LIMIT,
-            )
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=settings.codex_workdir,
+                    env=codex_env,
+                    limit=_ASYNCIO_STREAM_LIMIT,
+                )
+            except FileNotFoundError as e:
+                raise CodexError(
+                    f"Failed to launch codex: {e}. Check CODEX_PATH and PATH."
+                )
+            except PermissionError as e:
+                raise CodexError(
+                    f"Permission error launching codex: {e}. Ensure the binary is executable."
+                )
             stdout_data, stderr_data = await asyncio.wait_for(
                 proc.communicate(), timeout=settings.timeout_seconds
             )
@@ -1044,7 +1087,17 @@ async def run_codex_last_message(
             return sanitized
         return text.strip()
     except asyncio.TimeoutError:
+        if proc and proc.returncode is None:
+            proc.kill()
+            with suppress(Exception):
+                await proc.wait()
         raise CodexError("codex execution timed out", status_code=504)
+    except asyncio.CancelledError:
+        if proc and proc.returncode is None:
+            proc.kill()
+            with suppress(Exception):
+                await proc.wait()
+        raise
     finally:
         try:
             os.remove(out_path)

@@ -188,7 +188,7 @@ Structured output（`response_format` や JSON Schema）には Codex CLI が文�
   - `1` にするとローカル以外の `base_url`（localhost/127.0.0.1/[::1]/UNIX ソケット以外）のモデルプロバイダを 400 で拒否します。
   - サーバーは `$CODEX_HOME/config.toml` の `model_providers` と組み込み `openai` プロバイダの `OPENAI_BASE_URL` を検証し、不明な設定は安全側で拒否します。
 - CODEX_ALLOW_DANGER_FULL_ACCESS: `0` または `1`（既定 `0`）。`1` にすると API から `x_codex.sandbox: "danger-full-access"` を要求できます。隔離環境以外では有効化しないでください。
-- CODEX_TIMEOUT: Codex 実行のサーバー側タイムアウト秒数（既定 120 秒）。
+- CODEX_TIMEOUT: Codex 実行のサーバー側タイムアウト秒数（既定 300 秒）。
 - CODEX_MAX_PARALLEL_REQUESTS: Codex サブプロセスの同時実行数の上限（既定 2）。スループットを増やしたい場合は値を上げ、従来どおり 1 並列で運用したい場合は 1 を設定してください。
 - CODEX_ENV_FILE: 読み込む `.env` ファイルのパス。サーバー起動前に OS 環境変数として設定する必要があり、`.env` 内からは指定できません（既定 `.env`）。
 

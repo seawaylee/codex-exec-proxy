@@ -164,7 +164,7 @@ curl -N \
 - `CODEX_REASONING_EFFORT`: `minimal` / `low` / `medium` / `high`
 - `CODEX_LOCAL_ONLY`: `0/1` (default 0). If 1, reject non‑local base URLs
 - `CODEX_ALLOW_DANGER_FULL_ACCESS`: allow `sandbox=danger-full-access` when `1`
-- `CODEX_TIMEOUT`: timeout seconds for Codex (default 120)
+- `CODEX_TIMEOUT`: timeout seconds for Codex (default 300)
 - `RATE_LIMIT_PER_MINUTE`: allowed requests per minute (default 60)
 - `CODEX_ENV_FILE`: path to `.env` to load (set as OS env var before start)
 

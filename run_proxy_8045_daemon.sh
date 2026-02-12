@@ -23,7 +23,7 @@ export OPENAI_BASE_URL OPENAI_API_KEY
 
 export PATH="/Users/NikoBelic/.volta/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export CODEX_PATH="${CODEX_PATH:-/Users/NikoBelic/.volta/bin/codex}"
-export CODEX_TIMEOUT="${CODEX_TIMEOUT:-120}"
+export CODEX_TIMEOUT="${CODEX_TIMEOUT:-300}"
 
 # Keep auth disabled by default.
 unset ENABLE_PROXY_AUTH

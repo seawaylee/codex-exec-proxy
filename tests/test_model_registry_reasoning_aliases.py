@@ -37,7 +37,7 @@ def test_choose_model_accepts_gpt_alias(monkeypatch):
     model, effort = model_registry.choose_model("gpt")
 
     assert model == "gpt-5.1"
-    assert effort is None
+    assert effort == "low"
 
 
 def test_choose_model_accepts_local_openai_alias(monkeypatch):

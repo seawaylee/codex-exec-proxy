@@ -128,6 +128,8 @@ def choose_model(requested: Optional[str]) -> Tuple[str, Optional[str]]:
         base_model, effort = _split_model_and_effort(requested)
         aliased_model = _resolve_legacy_model_alias(base_model)
         if aliased_model is not None:
+            if effort is None and base_model.strip().lower() == "gpt":
+                effort = "low"
             return aliased_model, effort
         if base_model in _AVAILABLE_MODELS:
             return base_model, effort

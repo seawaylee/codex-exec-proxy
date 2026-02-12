@@ -98,15 +98,27 @@ async def chat_completions(req: ChatCompletionRequest):
     try:
         if req.stream:
             async def event_gen() -> AsyncIterator[bytes]:
-                async for text in run_codex(prompt, overrides, image_paths, model=model_name):
-                    if text:
-                        chunk = {
-                            "choices": [
-                                {"delta": {"content": text}, "index": 0, "finish_reason": None}
-                            ]
+                try:
+                    async for text in run_codex(prompt, overrides, image_paths, model=model_name):
+                        if text:
+                            chunk = {
+                                "choices": [
+                                    {"delta": {"content": text}, "index": 0, "finish_reason": None}
+                                ]
+                            }
+                            yield f"data: {json.dumps(chunk)}\n\n".encode()
+                except CodexError as e:
+                    status = getattr(e, "status_code", None) or 500
+                    err_obj = {
+                        "error": {
+                            "message": str(e),
+                            "type": "server_error" if status >= 500 else "upstream_error",
+                            "code": None,
                         }
-                        yield f"data: {json.dumps(chunk)}\n\n".encode()
-                yield b"data: [DONE]\n\n"
+                    }
+                    yield f"data: {json.dumps(err_obj)}\n\n".encode()
+                finally:
+                    yield b"data: [DONE]\n\n"
 
             return StreamingResponse(event_gen(), media_type="text/event-stream")
         else:

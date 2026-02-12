@@ -182,7 +182,8 @@ def _resolve_legacy_model_alias(requested_model: str) -> Optional[str]:
     if normalized not in {"gpt", "local_openai"}:
         return None
 
-    for preferred in ("gpt-5.3-codex", "gpt-5.3", "gpt-5", "gpt-5.1"):
+    # Prefer widely available stable defaults first for generic aliases.
+    for preferred in ("gpt-5.1", "gpt-5", "gpt-5.3", "gpt-5.3-codex"):
         if preferred in _AVAILABLE_MODELS:
             return preferred
     return get_default_model()

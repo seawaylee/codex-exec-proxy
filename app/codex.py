@@ -981,6 +981,8 @@ async def run_codex(
     output_filter = _CodexOutputFilter()
 
     async with _parallel_limiter.slot():
+        proc = None
+        stderr_task: Optional[asyncio.Task[str]] = None
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -1001,10 +1003,35 @@ async def run_codex(
         except Exception as e:
             raise CodexError(f"Unable to start codex process: {e}")
 
+        async def _read_stderr_text() -> str:
+            if proc is None or proc.stderr is None:
+                return ""
+            data = await proc.stderr.read()
+            return data.decode(errors="ignore")
+
+        timeout_seconds = float(settings.timeout_seconds)
+        started_at = asyncio.get_running_loop().time()
+
+        def _remaining_timeout() -> Optional[float]:
+            if timeout_seconds <= 0:
+                return None
+            elapsed = asyncio.get_running_loop().time() - started_at
+            remaining = timeout_seconds - elapsed
+            if remaining <= 0:
+                raise asyncio.TimeoutError
+            return remaining
+
+        stderr_task = asyncio.create_task(_read_stderr_text())
         raw_lines: List[str] = []
         try:
             while True:
-                line = await proc.stdout.readline()
+                if proc.stdout is None:
+                    break
+                remaining = _remaining_timeout()
+                if remaining is None:
+                    line = await proc.stdout.readline()
+                else:
+                    line = await asyncio.wait_for(proc.stdout.readline(), timeout=remaining)
                 if not line:
                     break
                 decoded = line.decode(errors="ignore")
@@ -1012,19 +1039,38 @@ async def run_codex(
                 filtered = output_filter.process(decoded.rstrip("\n"))
                 if filtered:
                     yield filtered
-            await asyncio.wait_for(proc.wait(), timeout=settings.timeout_seconds)
+            remaining = _remaining_timeout()
+            if remaining is None:
+                await proc.wait()
+            else:
+                await asyncio.wait_for(proc.wait(), timeout=remaining)
             if proc.returncode != 0:
-                stderr_text = (await proc.stderr.read()).decode(errors="ignore")
+                stderr_text = await stderr_task
                 stdout_text = "".join(raw_lines)
                 message, status = _classify_codex_failure(stdout_text, stderr_text)
                 raise CodexError(message, status_code=status)
+            with suppress(asyncio.CancelledError):
+                await stderr_task
         except asyncio.TimeoutError:
-            proc.kill()
+            if proc.returncode is None:
+                proc.kill()
+                with suppress(Exception):
+                    await proc.wait()
             raise CodexError("codex execution timed out", status_code=504)
+        except asyncio.CancelledError:
+            if proc.returncode is None:
+                proc.kill()
+                with suppress(Exception):
+                    await proc.wait()
+            raise
         finally:
             if proc.returncode is None:
                 proc.kill()
                 await proc.wait()
+            if stderr_task is not None and not stderr_task.done():
+                stderr_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await stderr_task
 
 
 

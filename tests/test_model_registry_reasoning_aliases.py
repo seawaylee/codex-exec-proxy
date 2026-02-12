@@ -30,22 +30,22 @@ def test_choose_model_accepts_gpt51_reasoning_suffix(monkeypatch):
 
 
 def test_choose_model_accepts_gpt_alias(monkeypatch):
-    available = ["gpt-5.3-codex", "gpt-5"]
+    available = ["gpt-5.1", "gpt-5.3-codex", "gpt-5"]
     monkeypatch.setattr(model_registry, "_AVAILABLE_MODELS", available)
     monkeypatch.setattr(model_registry, "_REASONING_ALIAS_MAP", {})
 
     model, effort = model_registry.choose_model("gpt")
 
-    assert model == "gpt-5.3-codex"
+    assert model == "gpt-5.1"
     assert effort is None
 
 
 def test_choose_model_accepts_local_openai_alias(monkeypatch):
-    available = ["gpt-5.3-codex", "gpt-5"]
+    available = ["gpt-5.1", "gpt-5.3-codex", "gpt-5"]
     monkeypatch.setattr(model_registry, "_AVAILABLE_MODELS", available)
     monkeypatch.setattr(model_registry, "_REASONING_ALIAS_MAP", {})
 
     model, effort = model_registry.choose_model("local_openai")
 
-    assert model == "gpt-5.3-codex"
+    assert model == "gpt-5.1"
     assert effort is None

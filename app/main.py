@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import time
 import uuid
@@ -30,6 +31,8 @@ from .schemas import (
     ResponsesOutputText,
 )
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI()
 
 app.add_middleware(
@@ -53,6 +56,11 @@ async def list_models():
 
 @app.post("/v1/chat/completions", dependencies=[Depends(rate_limiter), Depends(verify_api_key)])
 async def chat_completions(req: ChatCompletionRequest):
+    logger.info(
+        "chat.completions request started model=%s stream=%s",
+        req.model,
+        req.stream,
+    )
     try:
         model_name, alias_effort = choose_model(req.model)
     except ValueError as e:
@@ -109,6 +117,11 @@ async def chat_completions(req: ChatCompletionRequest):
                             yield f"data: {json.dumps(chunk)}\n\n".encode()
                 except CodexError as e:
                     status = getattr(e, "status_code", None) or 500
+                    logger.warning(
+                        "chat.completions request failed status=%s error=%s",
+                        status,
+                        e,
+                    )
                     err_obj = {
                         "error": {
                             "message": str(e),
@@ -123,12 +136,18 @@ async def chat_completions(req: ChatCompletionRequest):
             return StreamingResponse(event_gen(), media_type="text/event-stream")
         else:
             final = await run_codex_last_message(prompt, overrides, image_paths, model=model_name)
+            logger.info("chat.completions request completed status=200 stream=%s", req.stream)
             resp = ChatCompletionResponse(
                 choices=[ChatChoice(message=ChatMessageResponse(content=final))]
             )
             return resp
     except CodexError as e:
         status = getattr(e, "status_code", None) or 500
+        logger.warning(
+            "chat.completions request failed status=%s error=%s",
+            status,
+            e,
+        )
         raise HTTPException(
             status_code=status,
             detail={
@@ -147,6 +166,11 @@ async def chat_completions(req: ChatCompletionRequest):
 
 @app.post("/v1/responses", dependencies=[Depends(rate_limiter), Depends(verify_api_key)])
 async def responses_endpoint(req: ResponsesRequest):
+    logger.info(
+        "responses request started model=%s stream=%s",
+        req.model,
+        req.stream,
+    )
     try:
         model, alias_effort = choose_model(req.model)
     except ValueError as e:
@@ -236,6 +260,12 @@ async def responses_endpoint(req: ResponsesRequest):
                     ).model_dump()
                     yield f"event: response.completed\ndata: {json.dumps(final_obj)}\n\n".encode()
                 except CodexError as e:
+                    status = getattr(e, "status_code", None) or 500
+                    logger.warning(
+                        "responses request failed status=%s error=%s",
+                        status,
+                        e,
+                    )
                     err_evt = {"id": resp_id, "error": {"message": str(e)}}
                     yield f"event: response.error\ndata: {json.dumps(err_evt)}\n\n".encode()
                 finally:
@@ -249,6 +279,7 @@ async def responses_endpoint(req: ResponsesRequest):
             return StreamingResponse(event_gen(), media_type="text/event-stream", headers=headers)
         else:
             final = await run_codex_last_message(prompt, codex_overrides, image_paths, model=model)
+            logger.info("responses request completed status=200 stream=%s", req.stream)
             resp = ResponsesObject(
                 id=resp_id,
                 created=created,
@@ -264,6 +295,7 @@ async def responses_endpoint(req: ResponsesRequest):
             return resp
     except CodexError as e:
         status = getattr(e, "status_code", None) or 500
+        logger.warning("responses request failed status=%s error=%s", status, e)
         raise HTTPException(
             status_code=status,
             detail={

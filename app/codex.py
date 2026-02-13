@@ -389,10 +389,6 @@ def _resolve_codex_home_dir() -> Path:
         if env_path not in candidates:
             candidates.append(env_path)
 
-    default_home = Path.home() / ".codex"
-    if default_home not in candidates:
-        candidates.append(default_home)
-
     workspace_home = Path(settings.codex_workdir).expanduser() / ".codex"
     if workspace_home not in candidates:
         candidates.append(workspace_home)
@@ -400,6 +396,10 @@ def _resolve_codex_home_dir() -> Path:
     temp_home = Path(tempfile.gettempdir()) / "codex"
     if temp_home not in candidates:
         candidates.append(temp_home)
+
+    default_home = Path.home() / ".codex"
+    if default_home not in candidates:
+        candidates.append(default_home)
 
     for candidate in candidates:
         try:
@@ -455,11 +455,18 @@ def _configure_codex_home_environment(resolved: Path, had_errors: bool) -> None:
 
     if previous_env != resolved_str:
         if previous_env and previous_env != resolved_str:
-            logger.warning(
-                "Overriding unusable CODEX_HOME '%s' with '%s'.",
-                previous_env,
-                resolved_str,
-            )
+            if had_errors:
+                logger.warning(
+                    "Overriding unusable CODEX_HOME '%s' with '%s'.",
+                    previous_env,
+                    resolved_str,
+                )
+            else:
+                logger.info(
+                    "Updating CODEX_HOME from '%s' to '%s'.",
+                    previous_env,
+                    resolved_str,
+                )
         elif had_errors:
             logger.warning("Setting CODEX_HOME to fallback directory '%s'.", resolved_str)
         elif resolved != default_home:
@@ -827,7 +834,7 @@ def _parse_model_listing(raw: str) -> List[str]:
 
             is_codex = any(isinstance(d, str) and d.strip() == "codex" for d in deployments)
             models.append(model_id)
-            if is_codex and not model_id.endswith("-codex"):
+            if is_codex and "-codex" not in model_id:
                 models.append(f"{model_id}-codex")
 
             for variant in variants:
@@ -848,10 +855,9 @@ def _parse_model_listing(raw: str) -> List[str]:
         parts = stripped.split()
         base = parts[0]
         is_codex = any(p.lower() == "codex" for p in parts[1:])
-        if is_codex and not base.endswith("-codex"):
+        models.append(base)
+        if is_codex and "-codex" not in base:
             models.append(f"{base}-codex")
-        else:
-            models.append(base)
 
     return _dedupe_preserving_order(models)
 

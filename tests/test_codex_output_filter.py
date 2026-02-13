@@ -49,11 +49,11 @@ def test_user_block_is_removed():
     filt = codex._CodexOutputFilter()
     lines = [
         "[2025-09-18T23:14:43] User instructions:\n",
-        "今日の神戸の天気は？\n",
+        "今天北京的天气怎么样？\n",
         "[2025-09-18T23:14:51] codex\n",
         "\n",
-        "神戸の天気は快晴です。\n",
+        "北京今天是晴天。\n",
     ]
     out = [filt.process(line) for line in lines]
     rendered = "".join(part for part in out if part)
-    assert rendered.strip() == "神戸の天気は快晴です。"
+    assert rendered.strip() == "北京今天是晴天。"

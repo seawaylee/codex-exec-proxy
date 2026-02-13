@@ -1,8 +1,8 @@
-# 古い設定を削除
+# 删除旧的端口代理规则
 netsh interface portproxy delete v4tov4 listenport=8000 listenaddress=0.0.0.0
 
-# WSLのIPを取得
- = wsl hostname -I | ForEach-Object { /bin/bash.Split(" ")[0] }
+# 获取 WSL 的 IP 地址
+$wslIp = (wsl hostname -I).Trim().Split(" ")[0]
 
-# 新しい設定を追加
-netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=8000 connectaddress= connectport=8000
+# 添加新的端口代理规则
+netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=8000 connectaddress=$wslIp connectport=8000

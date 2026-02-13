@@ -1,15 +1,15 @@
-# Codex Wrapper config.toml サンプル
-# この内容を `workspace/codex_profile/codex_config.toml` に保存すると
-# サーバー起動時に Codex のホームディレクトリへコピーされます。
+# Codex Wrapper config.toml 示例
+# 将本文件内容保存为 `workspace/codex_profile/codex_config.toml` 后，
+# 服务启动时会复制到 Codex 的主目录。
 
 model = "o4-mini"
 model_reasoning_effort = "medium"
 
 [tools]
-# 例: Web 検索を有効化
+# 示例：启用 Web 搜索
 # web_search = true
 
 [profiles.default]
-# 例: Codex CLI に別プロバイダを設定する場合
+# 示例：为 Codex CLI 配置其他模型提供方
 # model_provider = "ollama"
 # model = "llama3"

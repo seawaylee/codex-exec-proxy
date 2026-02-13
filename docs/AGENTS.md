@@ -1,324 +1,234 @@
-# Agents Guide (Codex-Wrapper)
+# Agents 指南（Codex-Wrapper）
 
-This server wraps the Codex CLI with FastAPI and exposes a minimal OpenAI‑compatible API. You can use existing OpenAI clients (Python/JS, etc.) by switching `base_url`.
+本服务使用 FastAPI 包装 Codex CLI，并提供最小 OpenAI 兼容 API。你可以通过替换 `base_url` 直接复用已有 OpenAI 客户端（Python/JS 等）。
 
-Important: Always install Python libraries inside a virtual environment (venv).
+重要：请始终在虚拟环境（venv）中安装 Python 依赖。
 
-## Basics
+## 基础信息
 
-- Base URL: `http://<host>:8000/v1`
-- Auth: `Authorization: Bearer <PROXY_API_KEY>` (you may run without it if configured that way)
-- Model IDs: discovered at startup by running `codex models list`. Call `GET /v1/models` to inspect the exact names your Codex CLI reports.
-  - When the CLI only exposes deployments/variants (e.g. `{"id": "gpt-5", "deployment": "codex"}`), the wrapper expands them into aliases such as `gpt-5-codex` so existing clients continue to work.
-  - You can append ` minimal` / ` low` / ` medium` / ` high` to those model IDs to set the reasoning effort (for example: `gpt-5-codex high`).
-- Submodule: Codex reference lives in `submodules/codex`
-- Supported APIs: `/v1/chat/completions` and minimal `/v1/responses` (see `docs/RESPONSES_API_PLAN.ja.md` – Japanese)
+- Base URL：`http://<host>:8000/v1`
+- 鉴权：`Authorization: Bearer <PROXY_API_KEY>`（若服务端未配置可不带）
+- 模型列表：服务启动时执行 `codex models list` 自动发现；请通过 `GET /v1/models` 获取当前可用模型名
+  - 若 CLI 仅暴露部署信息（如 `{"id":"gpt-5","deployment":"codex"}`），包装器会扩展别名（如 `gpt-5-codex`）
+  - 支持在模型名后追加 ` minimal` / ` low` / ` medium` / ` high` 指定推理强度
+- 子模块：`submodules/codex`
+- 支持接口：`/v1/chat/completions` 与最小版 `/v1/responses`（见 `docs/RESPONSES_API_PLAN.zh.md`）
 
-## Codex Authentication (OAuth or API key)
+## Codex 认证（OAuth 或 API Key）
 
-- Pattern A: OAuth (ChatGPT sign‑in)
-  - Run: `codex login` as the same OS user as the server process
-  - Result: credentials saved to `$CODEX_HOME/auth.json` (default `~/.codex/auth.json`)
-  - Headless: SSH port‑forward (`ssh -L 1455:localhost:1455 <user>@<host>`) then open the printed URL locally, or copy `auth.json` from a local login to the server
-  - `OPENAI_API_KEY`: not required
+- 方案 A：OAuth（ChatGPT 登录）
+  - 以服务进程同一 OS 用户执行：`codex login`
+  - 结果保存到 `$CODEX_HOME/auth.json`（默认 `~/.codex/auth.json`）
+  - 无头环境可用 SSH 端口转发：`ssh -L 1455:localhost:1455 <user>@<host>`，然后在本地打开登录链接
+  - 该方案不要求 `OPENAI_API_KEY`
 
-- Pattern B: API key (metered alternative)
-  - Run: `codex login --api-key "<YOUR_OPENAI_API_KEY>"`
-  - Requires: an OpenAI API key with Responses API access
-  - Note: With `CODEX_LOCAL_ONLY=1`, remote provider `base_url`s (e.g., OpenAI) are rejected; typically keep `CODEX_LOCAL_ONLY=0` for API‑key usage.
+- 方案 B：API Key
+  - 执行：`codex login --api-key "<YOUR_OPENAI_API_KEY>"`
+  - 需要具备 Responses API 权限的 OpenAI Key
+  - 若开启 `CODEX_LOCAL_ONLY=1`，远程 `base_url` 会被拒绝；API Key 场景通常保持 `CODEX_LOCAL_ONLY=0`
 
-Notes
-- Set `CODEX_HOME` as an OS env var (not in `.env`). This wrapper consumes the `auth.json` stored by Codex CLI.
-- `PROXY_API_KEY` controls access to THIS wrapper API and is independent of Codex login.
+说明：
+- `CODEX_HOME` 应作为系统环境变量设置，不要写进 `.env`
+- `PROXY_API_KEY` 只控制本包装器访问，独立于 Codex 登录
 
-## Supported APIs
+## 支持的 API
 
 - `GET /v1/models`
-  - Example: `{ "data": [{ "id": "o4-mini" }, { "id": "gpt-4.1" }] }`
-- `POST /v1/chat/completions`
-  - Input (subset)
-    - `model`: optional; defaults to the first model reported by Codex at startup
-  - `messages`: OpenAI format (`system`/`user`/`assistant`). User messages may include `input_image` parts.
-    - `stream`: `true` for SSE streaming
-    - `temperature`, `max_tokens`: accepted but ignored for the initial version
-  - Output (non‑stream)
-    - `choices[0].message.content` holds the final text
-    - `usage` is 0 for now
-  - Output (stream / SSE)
-    - `Content-Type: text/event-stream`
-    - Lines as `data: {chunk}`, end with `data: [DONE]`
-    - JSON lines are preferred; we emit their `text`/`content` as `choices[0].delta.content`. Non‑JSON lines are concatenated as text fallback.
-  - Structured output features such as `response_format`/JSON Schema are not supported because the Codex CLI emits plain text and the wrapper normalizes those values into strings.
+  - 示例：`{ "data": [{ "id": "o4-mini" }, { "id": "gpt-4.1" }] }`
 
-## Examples (Python / OpenAI SDK)
+- `POST /v1/chat/completions`
+  - 输入（子集）
+    - `model`：可选，默认使用启动时发现的首个模型
+    - `messages`：OpenAI 兼容结构（`system`/`user`/`assistant`），用户消息支持 `input_image`
+    - `stream`：`true` 时采用 SSE
+    - `temperature`、`max_tokens`：接受但当前不生效
+  - 输出（非流）
+    - `choices[0].message.content` 为最终文本
+    - `usage` 目前固定为 0
+  - 输出（流/SSE）
+    - `Content-Type: text/event-stream`
+    - 每段形如 `data: {chunk}`，结束为 `data: [DONE]`
+
+- `POST /v1/responses`
+  - 已支持最小兼容（非流/流），事件与字段见 `docs/RESPONSES_API_PLAN.zh.md`
+
+## Python 示例（OpenAI SDK）
 
 ```python
 from openai import OpenAI
 
 client = OpenAI(
     base_url="http://localhost:8000/v1",
-    api_key="YOUR_PROXY_API_KEY",  # if required
+    api_key="YOUR_PROXY_API_KEY",  # 若服务端开启了代理鉴权
 )
 
-# Non-stream (replace with a name from GET /v1/models, e.g. "o4-mini")
 resp = client.chat.completions.create(
     model="o4-mini",
     messages=[
-        {"role": "system", "content": "You are a helpful coding agent."},
-        {"role": "user", "content": "Say hello and exit."},
+        {"role": "system", "content": "你是一个有帮助的编码助手。"},
+        {"role": "user", "content": "打个招呼并结束。"},
     ],
 )
 print(resp.choices[0].message.content)
-
-# Image input
-resp = client.chat.completions.create(
-    model="o4-mini",
-    messages=[
-        {
-            "role": "user",
-            "content": [
-                {"type": "input_text", "text": "Describe this image"},
-                {"type": "input_image", "image_url": {"url": "https://example.com/cat.png"}},
-            ],
-        }
-    ],
-)
-print(resp.choices[0].message.content)
-
-# Stream (SSE)
-with client.chat.completions.create(
-    model="o4-mini",
-    messages=[{"role": "user", "content": "Write 'hello'"}],
-    stream=True,
-) as stream:
-    for event in stream:
-        if event.type == "chunk":
-            delta = event.data.choices[0].delta
-            if delta and delta.content:
-                print(delta.content, end="", flush=True)
 ```
 
-## Examples (Responses API)
+## Responses API 示例
 
-Non‑stream
+非流：
+
 ```python
 from openai import OpenAI
+
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="YOUR_PROXY_API_KEY")
-resp = client.responses.create(model="o4-mini", input="Say hello")
+resp = client.responses.create(model="o4-mini", input="说一句你好")
 print(resp.output[0].content[0].text)
 ```
 
-Stream (SSE)
+流式（SSE）：
+
 ```bash
 curl -N \
   -H "Authorization: Bearer $PROXY_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"o4-mini","input":"Say hello","stream":true}' \
+  -d '{"model":"o4-mini","input":"说一句你好","stream":true}' \
   http://localhost:8000/v1/responses
 ```
 
-Minimal SSE events
-- `response.created` → initial state (`status=in_progress`)
-- `response.output_text.delta` → incremental text `{ "delta": "..." }`
-- `response.output_text.done` → final text `{ "text": "..." }`
-- `response.completed` → final object
-- On error: `response.error`, then `[DONE]`
+最小事件集合：
+- `response.created`
+- `response.output_text.delta`
+- `response.output_text.done`
+- `response.completed`
+- 错误时：`response.error`，随后 `[DONE]`
 
-## Example (curl / SSE)
+## 执行与安全
 
-```bash
-curl -N \
-  -H "Authorization: Bearer $PROXY_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-        "model":"codex-cli",
-        "stream":true,
-        "messages":[{"role":"user","content":"Say hello"}]
-      }' \
-  http://localhost:8000/v1/chat/completions
-```
+- Codex 调用形态：`codex exec <PROMPT> -q [--model <...>]`
+- `cwd` 被限制为 `CODEX_WORKDIR`
+- 限流与 CORS 在 API 层处理（可配置）
 
-## Error format
+## 环境变量（摘要）
 
-- Standard FastAPI JSON: `{ "detail": { ... } }`
+- `PROXY_API_KEY`：本代理鉴权（可选）
+- `CODEX_WORKDIR`：Codex 工作目录
+- `CODEX_PATH`：`codex` 可执行路径
+- `CODEX_SANDBOX_MODE`：`read-only` / `workspace-write` / `danger-full-access`
+- `CODEX_REASONING_EFFORT`：`minimal` / `low` / `medium` / `high`
+- `CODEX_LOCAL_ONLY`：`0/1`
+- `CODEX_ALLOW_DANGER_FULL_ACCESS`：`0/1`
+- `CODEX_TIMEOUT`：执行超时秒数（默认 300）
+- `RATE_LIMIT_PER_MINUTE`：每分钟请求数上限
+- `CODEX_ENV_FILE`：加载 `.env` 路径（启动前以系统环境变量设置）
 
-```json
-{"detail": {"message": "...", "type": "server_error", "code": null}}
-```
+未在请求中给出的 `x_codex` 字段会回落到服务端默认值。
 
-- Timeouts result in HTTP 500.
+## 运行模式建议（本地优先）
 
-## Execution and safety
+- 默认建议：`sandbox=read-only`
+- 推荐编辑模式：`sandbox=workspace-write` 且 `network_access=false`
+- 完全开放模式：`sandbox=danger-full-access`（仅在隔离可信环境启用）
 
-- Codex invocation: `codex exec <PROMPT> -q [--model <...>]`
-- CWD is restricted to `CODEX_WORKDIR` (run the server as a non‑root user)
-- Rate limiting/CORS are handled at the API layer (configurable)
-
-## Settings (Environment Variables)
-
-- `PROXY_API_KEY`: auth for this proxy (optional)
-- `CODEX_WORKDIR`: working directory for Codex runs
-- `CODEX_MODEL`: **deprecated**. Startup now queries available models automatically; setting this variable has no effect other than a warning.
-- `CODEX_PATH`: override path to `codex` binary
-- `CODEX_SANDBOX_MODE`: `read-only` / `workspace-write` / `danger-full-access`
-- `CODEX_REASONING_EFFORT`: `minimal` / `low` / `medium` / `high`
-- `CODEX_LOCAL_ONLY`: `0/1` (default 0). If 1, reject non‑local base URLs
-- `CODEX_ALLOW_DANGER_FULL_ACCESS`: allow `sandbox=danger-full-access` when `1`
-- `CODEX_TIMEOUT`: timeout seconds for Codex (default 300)
-- `RATE_LIMIT_PER_MINUTE`: allowed requests per minute (default 60)
-- `CODEX_ENV_FILE`: path to `.env` to load (set as OS env var before start)
-
-Server defaults may be overridden per‑request via the `x_codex` vendor extension; omitted fields fall back to server defaults.
-
-## Modes (Local‑first design)
-
-We assume a local‑only posture by default. Codex sandbox/approval and reasoning effort are mapped as follows:
-
-- Local‑only means model provider `base_url` should be local (e.g., `http://localhost:11434/v1`). External cloud base URLs are disallowed when `CODEX_LOCAL_ONLY=1`.
-- Network access for command execution is blocked by default (even in `workspace-write`). Allow only when explicitly configured.
-
-### Agent privileges (sandbox)
-
-- Safe (default): `sandbox=read-only`
-  - Read‑only; writes and network are blocked.
-- Edit allowed (recommended): `sandbox=workspace-write` (network `false`)
-  - Enables workspace edits and command execution; network remains blocked.
-- Full access (explicitly allowed only): `sandbox=danger-full-access`
-  - Full file/network access. Disabled by default; set `CODEX_ALLOW_DANGER_FULL_ACCESS=1` to allow.
-
-CLI equivalents
+CLI 示例：
 
 ```bash
-# Safe (default)
-codex exec "..." -q \
-  --config sandbox_mode='read-only'
+codex exec "..." -q --config sandbox_mode='read-only'
 
-# Edit allowed
 codex exec "..." -q \
   --config sandbox_mode='workspace-write' \
   --config sandbox_workspace_write='{ network_access = false }'
 
-# Danger mode (explicit)
-codex exec "..." -q \
-  --config sandbox_mode='danger-full-access'
+codex exec "..." -q --config sandbox_mode='danger-full-access'
 ```
 
-### Reasoning Effort
+## 推理强度建议
 
-Control Codex `model_reasoning_effort` (`minimal`/`low`/`medium`/`high`).
+- 默认：`medium`
+- `high`：多文件重构、需求不清晰场景
+- `medium`：常规实现与修复
+- `low/minimal`：小改动、命令执行类任务
 
-- Default: `medium`
-- Guide:
-  - `high`: big refactors, multi‑file consistency, ambiguous requirements
-  - `medium`: routine implementation and fixes
-  - `low/minimal`: small mechanical edits, command‑centric tasks
+## Local-Only 约束
 
-CLI example
+当 `CODEX_LOCAL_ONLY=1` 时：
+- 仅允许本地 `base_url`（`localhost` / `127.0.0.1` / `[::1]` / unix）
+- 服务会检查 `$CODEX_HOME/config.toml` 中 `model_providers` 与内置 OpenAI 的 `OPENAI_BASE_URL`
+- 非本地地址会被拒绝（HTTP 400）
 
-```bash
-codex exec "..." -q --config model_reasoning_effort='high'
-```
+## `x_codex` 扩展字段
 
-### Server enforcement (Local‑Only)
-
-- With `CODEX_LOCAL_ONLY=1`, non‑local provider base URLs are rejected (anything other than localhost/127.0.0.1/[::1]/unix).
-  - The server inspects `$CODEX_HOME/config.toml` `model_providers` and the built‑in `openai` `OPENAI_BASE_URL`.
-- Default is `CODEX_LOCAL_ONLY=0` (recommended for OpenAI default provider usage).
-- Keep cloud keys like `OPENAI_API_KEY` unset unless needed; with `CODEX_LOCAL_ONLY=1` they are unused anyway.
-- For local providers (e.g., `ollama`) you can pass configs with `--config`.
-
-Example (force local Ollama)
-
-```bash
-codex exec "..." -q \
-  --config model_provider='ollama' \
-  --config model='llama3.1' \
-  --config model_providers.ollama='{ name = "Ollama", base_url = "http://localhost:11434/v1" }' \
-  --config sandbox_mode='workspace-write' \
-  --config sandbox_workspace_write='{ network_access = false }' \
-  --config model_reasoning_effort='medium'
-```
-
-### Vendor extension from API (`x_codex`)
-
-To remain OpenAI‑compatible, we accept an optional `x_codex` field. Omitted fields fall back to server defaults.
+为保持 OpenAI 兼容，支持可选扩展字段：
 
 ```json
 {
   "model": "codex-cli",
-  "messages": [ { "role": "user", "content": "..." } ],
+  "messages": [{ "role": "user", "content": "..." }],
   "x_codex": {
-    "sandbox": "workspace-write",           
-    "reasoning_effort": "high",             
-    "network_access": false                  
+    "sandbox": "workspace-write",
+    "reasoning_effort": "high",
+    "network_access": false
   }
 }
 ```
 
-The server maps these to Codex CLI `--config`. With `CODEX_LOCAL_ONLY=1`, non‑local base URLs are rejected; `danger-full-access` is allowed only when `CODEX_ALLOW_DANGER_FULL_ACCESS=1`.
+## 子模块工作流
 
-## Submodule workflow
-
-- Location: `submodules/codex` (https://github.com/openai/codex.git)
-- First checkout: `git submodule update --init --recursive`
-- Update to latest:
+- 位置：`submodules/codex`
+- 首次拉取：`git submodule update --init --recursive`
+- 更新到最新：
 
 ```bash
 git submodule update --remote submodules/codex
-# Commit as needed in the parent repo
 ```
 
-## Limitations (initial)
+## 已知限制
 
- - No tool/function calling; no audio
-- No strict token accounting; parallelism is capped by `CODEX_MAX_PARALLEL_REQUESTS` (default 2)
-- CLI output format can evolve; we parse both JSON and text to remain resilient
+- 暂不支持 tool/function calling 与音频
+- 暂无严格 token 计量
+- CLI 输出格式可能变化，包装器做了 JSON + 文本双路径兼容
 
-## Troubleshooting
+## 故障排查
 
-- 401: check `PROXY_API_KEY` and request headers
-- 500 (incl. timeout): Codex run took too long; simplify prompt or raise timeout
-- 429: rate limit reached; adjust `RATE_LIMIT_PER_MINUTE`
-- Extra CLI banner or `MCP client for ... failed to start` in output:
-  - Non‑stream uses `codex exec --json --output-last-message` to keep output clean.
-  - Stream now forwards Codex CLI output verbatim; expect banners/warnings unless you trim them in your Codex profile or CLI config.
-  - Root fix: remove/comment `mcp_servers` in `~/.codex/config.toml` to avoid timeouts from unconfigured servers.
+- 401：检查 `PROXY_API_KEY` 与请求头
+- 500（含超时）：简化提示词或提高 `CODEX_TIMEOUT`
+- 429：触发限流，调整 `RATE_LIMIT_PER_MINUTE`
+- 流式输出出现 CLI banner / MCP 报错：
+  - 非流使用 `codex exec --json --output-last-message` 更干净
+  - 流式会透传 CLI 输出，可在 Codex profile 中自行裁剪
+  - 若是 MCP 未配置导致，检查并精简 `~/.codex/config.toml` 中 `mcp_servers`
 
-## Codex TOML config
+## Codex TOML 配置
 
-- Location: `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`)
-- Example: copy `docs/examples/codex-config.example.toml`
+- 路径：`$CODEX_HOME/config.toml`（默认 `~/.codex/config.toml`）
+- 示例：`docs/examples/codex-config.example.toml`
 
 ```bash
 mkdir -p ~/.codex
 cp docs/examples/codex-config.example.toml ~/.codex/config.toml
 ```
 
-- For OpenAI in API‑key mode set `OPENAI_API_KEY` (OAuth mode does not need it).
-- Enable web search via `tools.web_search = true` in `config.toml`.
-  - 注意: Codex プロファイルで web_search を有効化した場合、`reasoning_effort="minimal"` を指定したリクエストでは OpenAI 側がツール利用を禁止しているため 400 エラー (`The following tools cannot be used with reasoning.effort 'minimal': web_search.`) になります。`low`/`medium`/`high` のいずれかを使用してください。
-- Define MCP servers under `mcp_servers.<id>` (stdio).
-- API 専用の設定を分離したい場合は `.env` に `CODEX_CONFIG_DIR` を設定します。Codex ランタイムはこの値を `CODEX_HOME` として扱い、`config.toml` や MCP 定義をラッパー専用にできます。
+- API Key 模式需设置 `OPENAI_API_KEY`；OAuth 模式不需要
+- 可通过 `tools.web_search = true` 启用 Web 搜索
+  - 若启用 web_search，`reasoning_effort="minimal"` 可能被上游拒绝（400）
+  - 建议改用 `low` / `medium` / `high`
+- MCP 服务通过 `mcp_servers.<id>` 定义
+- 若需隔离本 API 专用配置，可在 `.env` 设置 `CODEX_CONFIG_DIR`
 
-## AGENTS templates
+## AGENTS 模板
 
-- Example: copy `docs/examples/AGENTS.example.md` to the desired location for Codex (global or repository).
+- 可将 `docs/examples/AGENTS.example.md` 复制到全局或项目目录：
 
 ```bash
-# Global defaults
+# 全局默认规则
 cp docs/examples/AGENTS.example.md ~/.codex/AGENTS.md
 
-# Repository-specific guidance
+# 项目规则
 cp docs/examples/AGENTS.example.md AGENTS.md
 ```
 
-Update the copied file with your project-specific notes. Codex reads AGENTS.md files at the root of the working directory tree when executing requests from this API.
+## 包装器启动覆盖目录
 
-## Wrapper bootstrap directory (agent/config overrides)
-
-- The repository ships a managed profile directory: `workspace/codex_profile/`.
-  - `codex_agents.sample.md` / `codex_config.sample.toml` act as templates. Rename or copy them to `codex_agents.md` / `codex_config.toml` to activate overrides.
-  - During server startup the wrapper copies those files (if present) into the Codex home (`AGENTS.md` / `config.toml`).
-  - 片方だけ配置した場合は存在するファイルのみがコピーされます。
-- Legacy filenames (`agent.md`, `config.toml`) continue to work but trigger a startup warning so you can migrate at your own pace.
-- Set `CODEX_WRAPPER_PROFILE_DIR` if you want to store these overrides elsewhere. The path should contain the new filenames (`codex_agents.md`, `codex_config.toml`).
+- 默认目录：`workspace/codex_profile/`
+- 模板文件：`codex_agents.sample.md` / `codex_config.sample.toml`
+- 将模板复制为 `codex_agents.md` / `codex_config.toml` 后，启动时会覆盖 Codex 主目录对应文件
+- 若只存在其中一个文件，则仅复制该文件
+- 旧文件名（`agent.md`、`config.toml`）仍可用，但会触发迁移警告

@@ -9,7 +9,8 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     proxy_api_key: Optional[str] = Field(default=None, alias="PROXY_API_KEY")
-    # Docker ビルドで使用するホスト UID/GID。アプリ本体では未使用だが、.env の互換性維持のため受理する。
+    # Docker 构建时使用的宿主机 UID/GID。应用本身不直接使用，
+    # 但为了与 .env 兼容仍保留该配置项。
     host_uid: Optional[int] = Field(default=None, alias="HOST_UID")
     host_gid: Optional[int] = Field(default=None, alias="HOST_GID")
     codex_workdir: str = Field(default="/workspace", alias="CODEX_WORKDIR")

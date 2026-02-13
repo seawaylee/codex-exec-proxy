@@ -1,9 +1,9 @@
-# Codex プロファイル上書きディレクトリ
+# Codex 配置覆盖目录
 
-- `codex_agents.sample.md` と `codex_config.sample.toml` はサンプルです。
-- 実際に適用したい内容は `codex_agents.md`、`codex_config.toml` としてこのディレクトリに配置してください。
-- サーバー起動時にこれらのファイルが存在する場合のみ、Codex のホームディレクトリにある `AGENTS.md` と `config.toml` を上書きします。
-- 片方だけ配置した場合は、存在するファイルのみがコピーされます。
-- 互換性のために旧名称 (`agent.md` / `config.toml`) も読み込みますが、起動時に警告が表示されるので新名称への移行を推奨します。
+- `codex_agents.sample.md` 和 `codex_config.sample.toml` 是模板文件。
+- 实际生效内容请放在本目录下：`codex_agents.md`、`codex_config.toml`。
+- 仅当这些文件存在时，服务启动才会覆盖 Codex 主目录中的 `AGENTS.md` 与 `config.toml`。
+- 如果只放了其中一个文件，只会复制存在的那个。
+- 为兼容历史命名，仍会读取旧文件名（`agent.md` / `config.toml`），但启动时会给出迁移警告。
 
-カスタムファイルをコミットしないために `.gitignore` で `codex_agents.md` / `codex_config.toml`（および旧名称）を除外しています。
+为了避免提交个人配置，`.gitignore` 已忽略 `codex_agents.md` / `codex_config.toml`（以及旧名称）。

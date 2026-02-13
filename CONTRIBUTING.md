@@ -1,53 +1,53 @@
-# Contributing
+# 贡献指南
 
-Thanks for contributing to Codex-Wrapper! This repository maintains bilingual user docs (English and Japanese) and an English‑only agents guide. Please follow these rules to keep documentation consistent.
+感谢你为 Codex-Wrapper 做贡献。当前仓库的文档语言策略为“中文优先”，提交时请遵循以下规则。
 
-## Doc Language Policy
+## 文档语言策略
 
-- User docs are maintained in two languages with mirrored content, except noted below:
-  - English files end with `.en.md` (except the root `README.md`)
-  - Japanese files end with `.ja.md`
-- The agents guide is English‑only: `docs/AGENTS.md`.
-- Environment configuration docs are English‑only: `docs/ENV.md`.
-- Implementation Plan and Responses API Plan are Japanese‑only: `docs/IMPLEMENTATION_PLAN.ja.md`, `docs/RESPONSES_API_PLAN.ja.md`.
+- 面向用户的文档默认使用中文。
+- 关键文档路径：
+  - 根说明：`README.md`
+  - 代理/运维手册：`docs/AGENTS.md`
+  - 环境变量说明：`docs/ENV.md`
+  - 实施计划：`docs/IMPLEMENTATION_PLAN.zh.md`
+  - Responses API 计划：`docs/RESPONSES_API_PLAN.zh.md`
 
-## Content Parity Rules
+## 一致性要求
 
-- Update both English and Japanese documents in the same PR whenever the content changes (except the two Japanese‑only docs listed above).
-- Cross‑link the pair (e.g., add links between `README.md` and `README.ja.md`, or between `*.en.md` and `*.ja.md`).
-- If you add a new doc, create both `*.en.md` and `*.ja.md` siblings under `docs/` (unless you are extending one of the Japanese‑only docs).
-- Keep titles, section order, and examples aligned across languages. If an example is locale‑specific, note it explicitly in both versions.
-- Small wording fixes in one language still require parity (make an equivalent adjustment in the other language or open a follow‑up issue tagged `docs:parity`).
+- 若改动涉及行为、配置或接口，请同步更新对应文档。
+- 更新示例命令时，确保可直接执行，避免过时参数。
+- 新增文档时，优先放在 `docs/` 并与现有目录结构保持一致。
 
-## Recommended Workflow
+## 推荐流程
 
-1) Author changes in English first, get technical approval.
-2) Port to Japanese in the same PR.
-3) Verify cross‑links and file names.
-4) Run a quick diff on sections to ensure order and coverage match.
+1. 先完成代码改动并通过本地验证。
+2. 再补文档与示例。
+3. 自检链接、文件名与环境变量是否一致。
+4. 提交前运行最小测试集。
 
-## PR Checklist (copy into your PR description)
+## PR 检查清单（可复制到 PR 描述）
 
-- [ ] Updated English doc(s)
-- [ ] Updated Japanese doc(s)
-- [ ] Cross‑links between language versions (`README.md`/`README.ja.md` or `*.en.md`/`*.ja.md`)
-- [ ] Agents guide unaffected or updated (`docs/AGENTS.md` is English‑only)
-- [ ] ENV doc referenced where appropriate (`docs/ENV.md`)
-- [ ] Local build/run sanity checked if instructions changed
+- [ ] 已更新相关中文文档
+- [ ] 已核对示例命令与配置项
+- [ ] 如有行为变更，已补充测试
+- [ ] 如有启动/部署变更，已在文档说明
+- [ ] 本地已执行基础运行或测试验证
 
-## Style
+## 风格建议
 
-- Keep headings and code fences consistent.
-- Use backticks for commands, file paths, env vars, and code identifiers.
-- Prefer concise, actionable steps over long prose.
+- 标题、代码块、列表结构保持统一。
+- 命令、路径、环境变量和代码标识使用反引号。
+- 说明文字以可执行步骤为主，避免空泛描述。
 
-## Development
+## 开发与运行
 
-- Python: use a virtual environment (`venv`) and install from `requirements.txt`.
-- Start the server: `uvicorn app.main:app --host 0.0.0.0 --port 8000`.
-- Submodule updates: `git submodule update --init --recursive` and `git submodule update --remote submodules/codex` as needed.
+- Python 使用虚拟环境（`venv`），依赖来自 `requirements.txt`。
+- 启动服务：`uvicorn app.main:app --host 0.0.0.0 --port 8000`。
+- 子模块更新：
+  - `git submodule update --init --recursive`
+  - `git submodule update --remote submodules/codex`
 
-## Reporting Issues
+## 问题反馈
 
-- Use GitHub Issues with clear repro steps, expected vs actual behavior, and logs if relevant.
-- Tag documentation issues that need translation with `docs:parity`.
+- 建议通过 GitHub Issues 提交，附上复现步骤、期望行为、实际行为与关键日志。
+- 若问题与文档不一致相关，请在描述中明确具体文件路径。

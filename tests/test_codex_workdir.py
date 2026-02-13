@@ -74,8 +74,10 @@ def test_skip_git_repo_flag_added_when_workdir_not_repo(monkeypatch, tmp_path):
 def test_codex_home_fallback_when_default_not_writable(monkeypatch, tmp_path):
     """Fallback to a writable CODEX_HOME when default locations are read-only."""
 
-    default_home = tmp_path / "default-home"
-    default_home.mkdir()
+    env_home = tmp_path / "env-home"
+    env_home.mkdir()
+    user_home = tmp_path / "user-home"
+    user_home.mkdir()
     workspace_home = tmp_path / "workspace-home"
     workspace_home.mkdir()
     fallback_root = tmp_path / "fallback-root"
@@ -84,18 +86,39 @@ def test_codex_home_fallback_when_default_not_writable(monkeypatch, tmp_path):
     original_verify = codex._verify_directory_write_access
 
     def fake_verify(directory: Path) -> None:
-        if directory in (default_home, workspace_home / ".codex"):
+        if directory in (env_home, user_home / ".codex", workspace_home / ".codex"):
             raise PermissionError("read-only")
         original_verify(directory)
 
-    monkeypatch.setenv("CODEX_HOME", str(default_home))
+    monkeypatch.setenv("CODEX_HOME", str(env_home))
     monkeypatch.setattr(codex.settings, "codex_config_dir", None, raising=False)
     monkeypatch.setattr(codex.settings, "codex_workdir", str(workspace_home), raising=False)
     monkeypatch.setattr(codex.tempfile, "gettempdir", lambda: str(fallback_root), raising=False)
+    monkeypatch.setattr(codex.Path, "home", staticmethod(lambda: user_home), raising=False)
     monkeypatch.setattr(codex, "_verify_directory_write_access", fake_verify, raising=False)
 
     env = codex._build_codex_env()
 
     expected_home = fallback_root / "codex"
+    assert env["CODEX_HOME"] == str(expected_home)
+    assert codex.settings.codex_config_dir == str(expected_home)
+
+
+def test_codex_home_prefers_user_home_before_workspace(monkeypatch, tmp_path):
+    """Prefer ~/.codex when no explicit CODEX_HOME/CODEX_CONFIG_DIR is provided."""
+
+    fake_home = tmp_path / "user-home"
+    fake_home.mkdir()
+    workspace_home = tmp_path / "workspace-home"
+    workspace_home.mkdir()
+
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    monkeypatch.setattr(codex.settings, "codex_config_dir", None, raising=False)
+    monkeypatch.setattr(codex.settings, "codex_workdir", str(workspace_home), raising=False)
+    monkeypatch.setattr(codex.Path, "home", staticmethod(lambda: fake_home), raising=False)
+
+    env = codex._build_codex_env()
+
+    expected_home = fake_home / ".codex"
     assert env["CODEX_HOME"] == str(expected_home)
     assert codex.settings.codex_config_dir == str(expected_home)

@@ -389,6 +389,10 @@ def _resolve_codex_home_dir() -> Path:
         if env_path not in candidates:
             candidates.append(env_path)
 
+    default_home = Path.home() / ".codex"
+    if default_home not in candidates:
+        candidates.append(default_home)
+
     workspace_home = Path(settings.codex_workdir).expanduser() / ".codex"
     if workspace_home not in candidates:
         candidates.append(workspace_home)
@@ -396,10 +400,6 @@ def _resolve_codex_home_dir() -> Path:
     temp_home = Path(tempfile.gettempdir()) / "codex"
     if temp_home not in candidates:
         candidates.append(temp_home)
-
-    default_home = Path.home() / ".codex"
-    if default_home not in candidates:
-        candidates.append(default_home)
 
     for candidate in candidates:
         try:

@@ -1,8 +1,10 @@
 import json
 import logging
 import os
+import sys
 import time
 import uuid
+from datetime import datetime
 from typing import AsyncIterator, List
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -32,8 +34,66 @@ from .schemas import (
 )
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    stdout_handler = logging.StreamHandler(stream=sys.stdout)
+    stdout_handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+    logger.addHandler(stdout_handler)
 
 app = FastAPI()
+
+_LOG_PREVIEW_LIMIT = 200
+
+
+def _now_hhmmss() -> str:
+    return datetime.now().strftime("%H%M%S")
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return int((time.perf_counter() - started_at) * 1000)
+
+
+def _truncate_text(text: str, limit: int = _LOG_PREVIEW_LIMIT) -> str:
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}...(truncated, total={len(text)})"
+
+
+def _extract_message_text(content: object) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, dict):
+                text = part.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return " ".join(parts)
+    if isinstance(content, dict):
+        text = content.get("text")
+        if isinstance(text, str):
+            return text
+    return ""
+
+
+def _build_request_preview(messages: List[dict]) -> str:
+    previews: list[str] = []
+    for item in messages:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        text = _extract_message_text(item.get("content"))
+        if text:
+            previews.append(f"{role}:{text}" if role else text)
+        if len(" | ".join(previews)) >= _LOG_PREVIEW_LIMIT:
+            break
+    return _truncate_text(" | ".join(previews))
+
+
+def _compact_json(payload: dict) -> str:
+    filtered = {k: v for k, v in payload.items() if v is not None}
+    return json.dumps(filtered, ensure_ascii=False, sort_keys=True, default=str)
 
 app.add_middleware(
     CORSMiddleware,
@@ -56,14 +116,27 @@ async def list_models():
 
 @app.post("/v1/chat/completions", dependencies=[Depends(rate_limiter), Depends(verify_api_key)])
 async def chat_completions(req: ChatCompletionRequest):
-    logger.info(
-        "chat.completions request started model=%s stream=%s",
-        req.model,
-        req.stream,
-    )
+    started_at = time.perf_counter()
+    called_at = _now_hhmmss()
+    message_dicts = [m.model_dump() for m in req.messages]
+    request_params = {
+        "model": req.model,
+        "stream": req.stream,
+        "temperature": req.temperature,
+        "max_tokens": req.max_tokens,
+        "message_count": len(req.messages),
+    }
+
     try:
         model_name, alias_effort = choose_model(req.model)
     except ValueError as e:
+        logger.warning(
+            "chat.completions request failed status=404 called_at=%s duration_ms=%s request_params=%s error=%s",
+            called_at,
+            _elapsed_ms(started_at),
+            _compact_json(request_params),
+            e,
+        )
         raise HTTPException(
             status_code=404,
             detail={
@@ -73,11 +146,25 @@ async def chat_completions(req: ChatCompletionRequest):
             },
         )
 
-    prompt, image_urls = build_prompt_and_images([m.dict() for m in req.messages])
-    x_overrides = req.x_codex.dict(exclude_none=True) if req.x_codex else {}
+    prompt, image_urls = build_prompt_and_images(message_dicts)
+    x_overrides = req.x_codex.model_dump(exclude_none=True) if req.x_codex else {}
     if alias_effort and "reasoning_effort" not in x_overrides:
         x_overrides["reasoning_effort"] = alias_effort
     overrides = x_overrides or None
+    request_params.update(
+        {
+            "resolved_model": model_name,
+            "image_count": len(image_urls),
+            "overrides": overrides,
+        }
+    )
+    request_preview = _build_request_preview(message_dicts)
+    logger.info(
+        "chat.completions request started called_at=%s params=%s request_preview=%s",
+        called_at,
+        _compact_json(request_params),
+        request_preview,
+    )
 
     # Safety gate: only allow danger-full-access when explicitly enabled
     if overrides and overrides.get("sandbox") == "danger-full-access":
@@ -106,9 +193,15 @@ async def chat_completions(req: ChatCompletionRequest):
     try:
         if req.stream:
             async def event_gen() -> AsyncIterator[bytes]:
+                response_chars = 0
+                response_preview = ""
+                stream_status = 200
                 try:
                     async for text in run_codex(prompt, overrides, image_paths, model=model_name):
                         if text:
+                            response_chars += len(text)
+                            if len(response_preview) < _LOG_PREVIEW_LIMIT:
+                                response_preview += text[: _LOG_PREVIEW_LIMIT - len(response_preview)]
                             chunk = {
                                 "choices": [
                                     {"delta": {"content": text}, "index": 0, "finish_reason": None}
@@ -117,9 +210,15 @@ async def chat_completions(req: ChatCompletionRequest):
                             yield f"data: {json.dumps(chunk)}\n\n".encode()
                 except CodexError as e:
                     status = getattr(e, "status_code", None) or 500
+                    stream_status = status
                     logger.warning(
-                        "chat.completions request failed status=%s error=%s",
+                        "chat.completions request failed status=%s called_at=%s duration_ms=%s request_params=%s response_chars=%s response_preview=%s error=%s",
                         status,
+                        called_at,
+                        _elapsed_ms(started_at),
+                        _compact_json(request_params),
+                        response_chars,
+                        _truncate_text(response_preview),
                         e,
                     )
                     err_obj = {
@@ -131,12 +230,26 @@ async def chat_completions(req: ChatCompletionRequest):
                     }
                     yield f"data: {json.dumps(err_obj)}\n\n".encode()
                 finally:
+                    logger.info(
+                        "chat.completions request completed status=%s stream=%s duration_ms=%s response_chars=%s response_preview=%s",
+                        stream_status,
+                        req.stream,
+                        _elapsed_ms(started_at),
+                        response_chars,
+                        _truncate_text(response_preview),
+                    )
                     yield b"data: [DONE]\n\n"
 
             return StreamingResponse(event_gen(), media_type="text/event-stream")
         else:
             final = await run_codex_last_message(prompt, overrides, image_paths, model=model_name)
-            logger.info("chat.completions request completed status=200 stream=%s", req.stream)
+            logger.info(
+                "chat.completions request completed status=200 stream=%s duration_ms=%s response_chars=%s response_preview=%s",
+                req.stream,
+                _elapsed_ms(started_at),
+                len(final),
+                _truncate_text(final),
+            )
             resp = ChatCompletionResponse(
                 choices=[ChatChoice(message=ChatMessageResponse(content=final))]
             )
@@ -144,8 +257,11 @@ async def chat_completions(req: ChatCompletionRequest):
     except CodexError as e:
         status = getattr(e, "status_code", None) or 500
         logger.warning(
-            "chat.completions request failed status=%s error=%s",
+            "chat.completions request failed status=%s called_at=%s duration_ms=%s request_params=%s error=%s",
             status,
+            called_at,
+            _elapsed_ms(started_at),
+            _compact_json(request_params),
             e,
         )
         raise HTTPException(
@@ -166,14 +282,24 @@ async def chat_completions(req: ChatCompletionRequest):
 
 @app.post("/v1/responses", dependencies=[Depends(rate_limiter), Depends(verify_api_key)])
 async def responses_endpoint(req: ResponsesRequest):
-    logger.info(
-        "responses request started model=%s stream=%s",
-        req.model,
-        req.stream,
-    )
+    started_at = time.perf_counter()
+    called_at = _now_hhmmss()
+    request_params = {
+        "model": req.model,
+        "stream": req.stream,
+        "reasoning_effort": req.reasoning.effort if req.reasoning else None,
+    }
+
     try:
         model, alias_effort = choose_model(req.model)
     except ValueError as e:
+        logger.warning(
+            "responses request failed status=404 called_at=%s duration_ms=%s request_params=%s error=%s",
+            called_at,
+            _elapsed_ms(started_at),
+            _compact_json(request_params),
+            e,
+        )
         raise HTTPException(
             status_code=404,
             detail={
@@ -183,10 +309,17 @@ async def responses_endpoint(req: ResponsesRequest):
             },
         )
 
-    # Normalize input → messages
+    # Normalize input -> messages
     try:
         messages = normalize_responses_input(req.input)
     except ValueError as e:
+        logger.warning(
+            "responses request failed status=400 called_at=%s duration_ms=%s request_params=%s error=%s",
+            called_at,
+            _elapsed_ms(started_at),
+            _compact_json(request_params),
+            e,
+        )
         raise HTTPException(status_code=400, detail=str(e))
 
     overrides = {}
@@ -209,6 +342,21 @@ async def responses_endpoint(req: ResponsesRequest):
     created = int(time.time())
     response_model = req.model or model
     codex_overrides = overrides or None
+    request_params.update(
+        {
+            "resolved_model": model,
+            "message_count": len(messages),
+            "image_count": len(image_urls),
+            "codex_overrides": codex_overrides,
+        }
+    )
+    request_preview = _build_request_preview(messages)
+    logger.info(
+        "responses request started called_at=%s params=%s request_preview=%s",
+        called_at,
+        _compact_json(request_params),
+        request_preview,
+    )
 
     image_paths: List[str] = []
     try:
@@ -225,6 +373,9 @@ async def responses_endpoint(req: ResponsesRequest):
     try:
         if req.stream:
             async def event_gen() -> AsyncIterator[bytes]:
+                response_chars = 0
+                response_preview = ""
+                stream_status = 200
                 try:
                     created_evt = {
                         "id": resp_id,
@@ -238,6 +389,9 @@ async def responses_endpoint(req: ResponsesRequest):
                     buf: list[str] = []
                     async for text in run_codex(prompt, codex_overrides, image_paths, model=model):
                         if text:
+                            response_chars += len(text)
+                            if len(response_preview) < _LOG_PREVIEW_LIMIT:
+                                response_preview += text[: _LOG_PREVIEW_LIMIT - len(response_preview)]
                             buf.append(text)
                             delta_evt = {"id": resp_id, "delta": text}
                             yield f"event: response.output_text.delta\ndata: {json.dumps(delta_evt)}\n\n".encode()
@@ -261,14 +415,28 @@ async def responses_endpoint(req: ResponsesRequest):
                     yield f"event: response.completed\ndata: {json.dumps(final_obj)}\n\n".encode()
                 except CodexError as e:
                     status = getattr(e, "status_code", None) or 500
+                    stream_status = status
                     logger.warning(
-                        "responses request failed status=%s error=%s",
+                        "responses request failed status=%s called_at=%s duration_ms=%s request_params=%s response_chars=%s response_preview=%s error=%s",
                         status,
+                        called_at,
+                        _elapsed_ms(started_at),
+                        _compact_json(request_params),
+                        response_chars,
+                        _truncate_text(response_preview),
                         e,
                     )
                     err_evt = {"id": resp_id, "error": {"message": str(e)}}
                     yield f"event: response.error\ndata: {json.dumps(err_evt)}\n\n".encode()
                 finally:
+                    logger.info(
+                        "responses request completed status=%s stream=%s duration_ms=%s response_chars=%s response_preview=%s",
+                        stream_status,
+                        req.stream,
+                        _elapsed_ms(started_at),
+                        response_chars,
+                        _truncate_text(response_preview),
+                    )
                     yield b"data: [DONE]\n\n"
 
             headers = {
@@ -279,7 +447,13 @@ async def responses_endpoint(req: ResponsesRequest):
             return StreamingResponse(event_gen(), media_type="text/event-stream", headers=headers)
         else:
             final = await run_codex_last_message(prompt, codex_overrides, image_paths, model=model)
-            logger.info("responses request completed status=200 stream=%s", req.stream)
+            logger.info(
+                "responses request completed status=200 stream=%s duration_ms=%s response_chars=%s response_preview=%s",
+                req.stream,
+                _elapsed_ms(started_at),
+                len(final),
+                _truncate_text(final),
+            )
             resp = ResponsesObject(
                 id=resp_id,
                 created=created,
@@ -295,7 +469,14 @@ async def responses_endpoint(req: ResponsesRequest):
             return resp
     except CodexError as e:
         status = getattr(e, "status_code", None) or 500
-        logger.warning("responses request failed status=%s error=%s", status, e)
+        logger.warning(
+            "responses request failed status=%s called_at=%s duration_ms=%s request_params=%s error=%s",
+            status,
+            called_at,
+            _elapsed_ms(started_at),
+            _compact_json(request_params),
+            e,
+        )
         raise HTTPException(
             status_code=status,
             detail={

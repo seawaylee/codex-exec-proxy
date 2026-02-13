@@ -32,6 +32,16 @@
 - `CODEX_QUEUE_TIMEOUT_SECONDS`：请求等待可用执行槽位的超时（秒，默认 `30`）。
 - `CODEX_ENV_FILE`：要加载的 `.env` 文件名或路径（作为系统环境变量设置）。
 
+## 守护模式日志清理（`run_proxy_8045_daemon.sh`）
+
+以下变量用于 `run_proxy_8045_daemon.sh`（例如通过 LaunchAgent 启动 8045 服务时）：
+
+- `LOG_MAX_BYTES`：单个日志文件最大体积（字节），默认 `52428800`（50 MiB）。
+- `LOG_KEEP_BYTES`：触发清理后保留的末尾体积（字节），默认 `10485760`（10 MiB）。
+- `LOG_TRIM_INTERVAL_SECONDS`：日志体积巡检间隔（秒），默认 `300`（5 分钟）。
+- `LOG_STDOUT_PATH`：stdout 日志路径，默认 `logs/stdout.log`。
+- `LOG_STDERR_PATH`：stderr 日志路径，默认 `logs/stderr.log`。
+
 ## 模型选择
 
 - 服务启动时通过 `codex models list` 自动发现可用模型。
